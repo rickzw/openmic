@@ -255,3 +255,4 @@ Built with:
 - [PyObjC](https://pyobjc.readthedocs.io/) - macOS native APIs
 - [OpenAI Whisper](https://platform.openai.com/docs/guides/speech-to-text) - Speech recognition
 - [OpenAI GPT](https://platform.openai.com/) / [Anthropic Claude](https://www.anthropic.com/) - Text polishing
+- [Claude Code](https://claude.ai/)
