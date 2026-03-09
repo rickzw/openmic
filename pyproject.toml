@@ -1,0 +1,39 @@
+[project]
+name = "openmic"
+version = "0.1.0"
+description = "macOS voice-to-text with AI polish — Bring Your Own Key"
+requires-python = ">=3.9"
+dependencies = [
+    "rumps>=0.4.0",
+    "pyobjc-core>=10.0",
+    "pyobjc-framework-Cocoa>=10.0",
+    "pyobjc-framework-Quartz>=10.0",
+    "pyobjc-framework-AVFoundation>=10.0",
+    "pyobjc-framework-ApplicationServices>=10.0",
+
+    "sounddevice>=0.5.0",
+    "soundfile>=0.12.0",
+    "numpy>=1.24.0",
+    "openai>=1.0.0",
+    "anthropic>=0.30.0",
+]
+
+[project.optional-dependencies]
+local-whisper-mlx = [
+    "mlx>=0.10.0",
+    "mlx-whisper>=0.4.0",
+]
+dev = [
+    "py2app>=0.28.0",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+openmic = "openmic.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
