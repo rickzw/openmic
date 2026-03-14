@@ -227,14 +227,6 @@ class HotkeyManager:
         if self.paused:
             return event
 
-        # DEBUG: log every keydown so we can verify vk and flags match expectations
-        if event_type == kCGEventKeyDown:
-            logger.info(
-                "_callback keydown: kc=%d flags=0x%x masked=0x%x | want vk=%d mods=0x%x | match=%s",
-                keycode, flags, masked_flags,
-                self.hotkey_vk, self.hotkey_mods, mods_match,
-            )
-
         if event_type == kCGEventKeyDown and keycode == self.hotkey_vk and mods_match:
             if not self._key_is_held:
                 # First key-down (not a repeat from holding the key down)
