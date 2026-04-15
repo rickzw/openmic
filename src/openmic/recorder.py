@@ -18,6 +18,8 @@ class AudioRecorder:
         self._stream = None  # type: sd.InputStream | None
         self._buffer = []  # type: list[np.ndarray]
         self._lock = threading.Lock()
+        self._level = 0.0
+        self._level_lock = threading.Lock()
 
     def start(self):
         """Start recording. Audio chunks accumulate in an internal buffer."""
@@ -40,6 +42,9 @@ class AudioRecorder:
             logger.warning("sounddevice status: %s", status)
         with self._lock:
             self._buffer.append(indata.copy())
+        level = float(np.sqrt(np.mean(indata ** 2)))
+        with self._level_lock:
+            self._level = level
 
     def stop(self) -> np.ndarray:
         """Stop recording and return the captured audio as a 1-D float32 numpy array."""
@@ -58,6 +63,16 @@ class AudioRecorder:
         duration = len(audio) / SAMPLE_RATE if len(audio) > 0 else 0
         logger.info("Audio recording stopped: %.1f seconds, %d samples", duration, len(audio))
         return audio
+
+    def get_level(self) -> float:
+        """Return the current RMS audio level in the range 0.0–1.0.
+
+        Returns 0.0 when not recording.
+        """
+        if not self.is_recording:
+            return 0.0
+        with self._level_lock:
+            return self._level
 
     @property
     def is_recording(self) -> bool:

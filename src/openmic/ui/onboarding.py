@@ -2,8 +2,10 @@
 
 import logging
 
+from AppKit import NSLocale
+
 from openmic.config import Config
-from openmic.ui.native_dialogs import show_alert, show_text_input
+from openmic.ui.native_dialogs import show_alert, show_picker, show_text_input
 from openmic.permissions import (
     check_accessibility,
     check_microphone,
@@ -72,6 +74,9 @@ def run_onboarding(config: Config) -> bool:
     # API Key
     _setup_api_key(config)
 
+    # Language
+    _setup_language(config)
+
     config.set("first_run_complete", True)
     logger.info("Onboarding complete")
     return True
@@ -117,6 +122,91 @@ def _setup_api_key(config: Config):
             config.set("anthropic_api_key", text.strip())
             config.set("llm_provider", "anthropic")
             logger.info("Anthropic API key saved during onboarding")
+
+
+_LANGUAGE_OPTIONS = [
+    "Auto-detect",
+    "English",
+    "Spanish",
+    "French",
+    "German",
+    "Portuguese",
+    "Chinese",
+    "Japanese",
+    "Korean",
+    "Italian",
+    "Dutch",
+    "Hindi",
+    "Arabic",
+    "Russian",
+    "Other\u2026",
+]
+
+_LANGUAGE_CODES = {
+    "English": "en",
+    "Spanish": "es",
+    "French": "fr",
+    "German": "de",
+    "Portuguese": "pt",
+    "Chinese": "zh",
+    "Japanese": "ja",
+    "Korean": "ko",
+    "Italian": "it",
+    "Dutch": "nl",
+    "Hindi": "hi",
+    "Arabic": "ar",
+    "Russian": "ru",
+}
+
+
+def _setup_language(config: Config):
+    """Prompt the user to select a transcription language."""
+    # Detect system language and pre-select if it's in our list
+    try:
+        sys_lang = NSLocale.currentLocale().languageCode()
+        # Find the display name for the system language code
+        default = next(
+            (name for name, code in _LANGUAGE_CODES.items() if code == sys_lang),
+            "Auto-detect",
+        )
+    except Exception:
+        default = "Auto-detect"
+
+    selected = show_picker(
+        title="Transcription Language",
+        message=(
+            "Which language will you primarily dictate in?\n\n"
+            "Auto-detect works well but specifying a language improves accuracy."
+        ),
+        options=_LANGUAGE_OPTIONS,
+        default=default,
+        ok_button="Continue",
+        cancel_button="Skip",
+    )
+
+    if selected is None or selected == "Auto-detect":
+        config.set("stt_language", "auto")
+        logger.info("Onboarding: language set to auto-detect")
+        return
+
+    if selected == "Other\u2026":
+        code = show_text_input(
+            title="Custom Language Code",
+            message="Enter an ISO 639-1 language code (e.g. 'sv' for Swedish):",
+            default_text="",
+            ok_button="Save",
+            cancel_button="Cancel",
+        )
+        if code and code.strip():
+            config.set("stt_language", code.strip().lower())
+            logger.info("Onboarding: language set to custom code '%s'", code.strip())
+        else:
+            config.set("stt_language", "auto")
+        return
+
+    code = _LANGUAGE_CODES.get(selected, "auto")
+    config.set("stt_language", code)
+    logger.info("Onboarding: language set to '%s' (%s)", selected, code)
 
 
 def _offer_anthropic_key(config: Config):

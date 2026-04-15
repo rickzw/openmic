@@ -9,6 +9,7 @@ Transitions between idle and active states are smoothly animated.
 """
 
 import logging
+import math
 
 import objc
 from AppKit import (
@@ -30,7 +31,7 @@ from AppKit import (
     NSApplication,
     NSScreen,
 )
-from Foundation import NSObject, NSThread, NSRunLoop, NSDate, NSDefaultRunLoopMode
+from Foundation import NSObject, NSThread, NSRunLoop, NSDate, NSDefaultRunLoopMode, NSTimer
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,17 @@ OVERLAY_IDLE_HEIGHT = 10
 OVERLAY_BOTTOM_MARGIN = 40   # pixels above bottom of visible screen
 CORNER_RADIUS = 10.0
 ANIMATION_DURATION = 0.25    # seconds for expand/collapse
+
+# Pulse animation (processing state)
+PULSE_PERIOD = 0.9           # seconds per full pulse cycle
+PULSE_MIN_ALPHA = 0.35       # minimum alpha at the bottom of the sine wave
+PULSE_FPS = 30               # timer fires per second
+
+# Audio level meter (recording state)
+LEVEL_POLL_INTERVAL = 0.05   # seconds between level reads
+LEVEL_BAR_COUNT = 4
+LEVEL_THRESHOLDS = [0.05, 0.15, 0.35, 0.60]  # RMS thresholds per bar
+LEVEL_BAR_ALPHA_DIM = 0.35
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +73,23 @@ class _MainThreadDispatcher(NSObject):
 
 # Single shared instance
 _dispatcher = _MainThreadDispatcher.alloc().init()
+
+
+class _TimerCallback(NSObject):
+    """Wraps a Python callable so NSTimer can fire it via a selector."""
+
+    def initWithCallback_(self, callback):
+        self = objc.super(_TimerCallback, self).init()
+        if self is None:
+            return None
+        self._callback = callback
+        return self
+
+    def fire_(self, timer):
+        try:
+            self._callback()
+        except Exception:
+            logger.exception("Timer callback failed")
 
 
 def _run_on_main_thread(fn):
@@ -89,6 +118,8 @@ class _OverlayView(NSView):
         self._state = "idle"
         self._drag_start = None        # NSPoint in window coords at mouseDown
         self._position_callback = None # callable(cx, bottom_y) — set by RecordingOverlay
+        self._pulse_alpha = 1.0        # current alpha for processing dot pulse
+        self._audio_level = 0.0        # current RMS level for recording meter
         return self
 
     def acceptsFirstMouse_(self, event):
@@ -140,6 +171,16 @@ class _OverlayView(NSView):
             self._label_text = "Done"
         self.setNeedsDisplay_(True)
 
+    def set_pulse_alpha(self, alpha: float):
+        """Update the pulse alpha for the processing dot. Must be called on main thread."""
+        self._pulse_alpha = alpha
+        self.setNeedsDisplay_(True)
+
+    def set_audio_level(self, level: float):
+        """Update the audio level for the recording meter. Must be called on main thread."""
+        self._audio_level = level
+        self.setNeedsDisplay_(True)
+
     def drawRect_(self, rect):
         bounds = self.bounds()
         # Adapt corner radius: fully rounded for thin capsule, standard for expanded
@@ -188,7 +229,12 @@ class _OverlayView(NSView):
                 check.stroke()
             else:
                 dot_path = NSBezierPath.bezierPathWithOvalInRect_(dot_rect)
-                self._dot_color.set()
+                if self._state == "processing":
+                    # Apply pulse alpha to the dot color
+                    dot_color = self._dot_color.colorWithAlphaComponent_(self._pulse_alpha)
+                else:
+                    dot_color = self._dot_color
+                dot_color.set()
                 dot_path.fill()
 
             attrs = {
@@ -203,6 +249,37 @@ class _OverlayView(NSView):
             text_x = dot_x + dot_size + 8
             text_y = (bounds.size.height - 16) / 2
             astr.drawAtPoint_((text_x, text_y))
+
+            # --- Audio level bars (recording state only) ---
+            if self._state == "recording":
+                bar_w = 4
+                bar_gap = 3
+                bar_max_h = bounds.size.height - 10
+                total_bars_w = LEVEL_BAR_COUNT * bar_w + (LEVEL_BAR_COUNT - 1) * bar_gap
+                bars_x = bounds.size.width - total_bars_w - 10
+                # Heights increase left-to-right for a rising-bar effect
+                bar_heights = [
+                    bar_max_h * 0.35,
+                    bar_max_h * 0.55,
+                    bar_max_h * 0.75,
+                    bar_max_h * 1.0,
+                ]
+                for i in range(LEVEL_BAR_COUNT):
+                    bh = bar_heights[i]
+                    bx = bars_x + i * (bar_w + bar_gap)
+                    by = (bounds.size.height - bh) / 2
+                    bar_rect = NSMakeRect(bx, by, bar_w, bh)
+                    active = self._audio_level >= LEVEL_THRESHOLDS[i]
+                    if active:
+                        NSColor.colorWithCalibratedRed_green_blue_alpha_(
+                            0.949, 0.271, 0.271, 1.0
+                        ).set()
+                    else:
+                        NSColor.colorWithCalibratedWhite_alpha_(1.0, LEVEL_BAR_ALPHA_DIM).set()
+                    bar_path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                        bar_rect, 2.0, 2.0
+                    )
+                    bar_path.fill()
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +300,19 @@ class RecordingOverlay:
         self._view = None
         self._current_state = None
         self._config = config
+        self._pulse_timer = None
+        self._pulse_timer_cb = None
+        self._level_timer = None
+        self._level_timer_cb = None
+        self._level_source = None  # callable() → float
+        self._pulse_phase = 0.0
+
+    def set_level_source(self, source):
+        """Register a callable that returns the current audio level (0.0–1.0).
+
+        Pass None to unregister. Thread-safe; can be called from any thread.
+        """
+        self._level_source = source
 
     # --- Helpers ---
 
@@ -260,6 +350,55 @@ class RecordingOverlay:
             self._config.set("overlay_anchor_x", cx)
             self._config.set("overlay_anchor_y", bottom_y)
             logger.info("Overlay position saved: cx=%.1f bottom_y=%.1f", cx, bottom_y)
+
+    # --- Pulse and level timer helpers (must only be called from the main thread) ---
+
+    def _start_pulse_timer(self):
+        self._stop_pulse_timer()
+        self._pulse_phase = 0.0
+        cb = _TimerCallback.alloc().initWithCallback_(self._on_pulse_tick)
+        self._pulse_timer_cb = cb  # keep strong reference
+        self._pulse_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1.0 / PULSE_FPS, cb, "fire:", None, True
+        )
+
+    def _stop_pulse_timer(self):
+        if self._pulse_timer is not None:
+            self._pulse_timer.invalidate()
+            self._pulse_timer = None
+        self._pulse_timer_cb = None
+        if self._view is not None:
+            self._view.set_pulse_alpha(1.0)
+
+    def _start_level_timer(self):
+        self._stop_level_timer()
+        cb = _TimerCallback.alloc().initWithCallback_(self._on_level_tick)
+        self._level_timer_cb = cb  # keep strong reference
+        self._level_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            LEVEL_POLL_INTERVAL, cb, "fire:", None, True
+        )
+
+    def _stop_level_timer(self):
+        if self._level_timer is not None:
+            self._level_timer.invalidate()
+            self._level_timer = None
+        self._level_timer_cb = None
+        if self._view is not None:
+            self._view.set_audio_level(0.0)
+
+    def _on_pulse_tick(self):
+        self._pulse_phase += (1.0 / PULSE_FPS) / PULSE_PERIOD * 2 * math.pi
+        alpha = PULSE_MIN_ALPHA + (1.0 - PULSE_MIN_ALPHA) * (math.sin(self._pulse_phase) + 1) / 2
+        if self._view is not None:
+            self._view.set_pulse_alpha(alpha)
+
+    def _on_level_tick(self):
+        if self._level_source is not None and self._view is not None:
+            try:
+                level = self._level_source()
+                self._view.set_audio_level(level)
+            except Exception:
+                logger.exception("Level source raised exception")
 
     # --- Main-thread workers (must only be called from the main thread) ---
 
@@ -310,6 +449,17 @@ class RecordingOverlay:
         try:
             x, y, w, h = self._compute_frame_for_state(state)
             target_frame = NSMakeRect(x, y, w, h)
+
+            # Start/stop timers based on new state
+            if state == "recording":
+                self._stop_pulse_timer()
+                self._start_level_timer()
+            elif state == "processing":
+                self._stop_level_timer()
+                self._start_pulse_timer()
+            else:  # idle or done
+                self._stop_pulse_timer()
+                self._stop_level_timer()
 
             # Update view content
             self._view.set_state(state)

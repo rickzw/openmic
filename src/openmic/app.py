@@ -11,10 +11,12 @@ from AppKit import NSSound
 from openmic.config import Config
 from openmic.constants import HOTKEY_MODE_HOLD, HOTKEY_MODE_TOGGLE
 from openmic.context import get_app_context
+from openmic.errors import InvalidAPIKeyError, NetworkError, OpenMicError
+from openmic.history import History
 from openmic.hotkey import HotkeyManager
 from openmic.permissions import check_accessibility, prompt_accessibility, request_accessibility
 from openmic.pipeline import CancelledError, Pipeline
-from openmic.ui.overlay import RecordingOverlay
+from openmic.ui.overlay import RecordingOverlay, _run_on_main_thread
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ class OpenMicApp(rumps.App):
         self.state = "idle"  # idle | recording | processing
 
         self._pipeline = Pipeline(self.config)
+        self._history = History()
         self._hotkey_queue = queue.Queue()
         self._overlay = RecordingOverlay(config=self.config)
 
@@ -56,6 +59,7 @@ class OpenMicApp(rumps.App):
         self.menu = [
             self.status_item,
             None,  # separator
+            rumps.MenuItem("History\u2026", callback=self._on_history),
             rumps.MenuItem("Settings...", callback=self._on_settings),
             rumps.MenuItem("Personal Dictionary...", callback=self._on_dictionary),
             None,  # separator
@@ -112,6 +116,11 @@ class OpenMicApp(rumps.App):
 
         # Pre-warm local whisper models in background
         threading.Thread(target=self._pipeline.warm_up, daemon=True).start()
+
+    def _on_history(self, _):
+        """Open history window."""
+        from openmic.ui.history_window import show_history
+        show_history(self._history)
 
     def _on_settings(self, _):
         """Open settings window."""
@@ -193,6 +202,7 @@ class OpenMicApp(rumps.App):
         self.status_item.title = "Status: Recording..."
         self._play_sound("Tink")
         self._pipeline.start_recording()
+        self._overlay.set_level_source(self._pipeline.recorder.get_level)
         self._overlay.show_recording()
         logger.info("Recording started")
 
@@ -228,19 +238,44 @@ class OpenMicApp(rumps.App):
                 return
             polished = self._pipeline.polish(transcript, app_context=app_context)
             self._pipeline.paste(polished)
+            self._history.append(polished)
             success = True
             logger.info("Pipeline complete: pasted %d chars", len(polished))
         except CancelledError:
             logger.info("Pipeline cancelled by user")
-        except RuntimeError as e:
-            # Descriptive errors from transcriber/polisher with user-facing messages
+        except OpenMicError as e:
             logger.error("Pipeline error: %s", e)
-            rumps.notification("OpenMic", "Error", str(e))
+            err = e
+            _run_on_main_thread(lambda: self._show_pipeline_error(err))
         except Exception:
             logger.exception("Pipeline error")
             rumps.notification("OpenMic", "Error", "Something went wrong. Check logs.")
         finally:
             self._reset_to_idle(show_done=success)
+
+    def _show_pipeline_error(self, error: OpenMicError):
+        """Show a context-specific error dialog for pipeline errors. Must run on main thread."""
+        from openmic.ui.native_dialogs import show_alert
+        if isinstance(error, InvalidAPIKeyError):
+            btn = show_alert(
+                title="Invalid API Key",
+                message=str(error),
+                buttons=["Open Settings", "Dismiss"],
+            )
+            if btn == 0:
+                self._on_settings(None)
+        elif isinstance(error, NetworkError):
+            show_alert(
+                title="Network Error",
+                message=str(error),
+                buttons=["OK"],
+            )
+        else:
+            show_alert(
+                title="OpenMic Error",
+                message=str(error),
+                buttons=["OK"],
+            )
 
     def _reset_to_idle(self, show_done=False):
         """Transition: PROCESSING → IDLE."""

@@ -59,8 +59,11 @@ All state transitions happen on the **main thread** via the 20Hz timer `_process
 | `src/openmic/paster.py` | `Paster` — clipboard + Cmd+V simulation |
 | `src/openmic/config.py` | `Config` — JSON persistence at `~/Library/Application Support/OpenMic/config.json` |
 | `src/openmic/constants.py` | All defaults, key codes, sample rates |
-| `src/openmic/ui/overlay.py` | `RecordingOverlay` — floating pill NSWindow |
-| `src/openmic/ui/native_dialogs.py` | NSAlert wrappers, hotkey capture field |
+| `src/openmic/errors.py` | Typed error hierarchy (`OpenMicError`, `InvalidAPIKeyError`, etc.) |
+| `src/openmic/history.py` | Persistent dictation history (JSONL, capped at 200 entries) |
+| `src/openmic/ui/overlay.py` | `RecordingOverlay` — floating pill NSWindow with pulse + level meter |
+| `src/openmic/ui/native_dialogs.py` | NSAlert wrappers, hotkey capture, dropdown picker |
+| `src/openmic/ui/history_window.py` | Dictation history viewer (NSTableView) |
 | `src/openmic/ui/settings_window.py` | Settings dialogs |
 | `src/openmic/ui/onboarding.py` | First-run setup wizard |
 
