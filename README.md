@@ -31,6 +31,7 @@ When you launch OpenMic for the first time:
    - Granting Accessibility permission (for global hotkey + paste)
    - Granting Microphone permission (for recording)
    - Entering your OpenAI API key
+   - **Selecting your primary dictation language** (auto-detects system locale; you can pick from a list or enter a custom ISO 639-1 code)
 
 2. **Grant permissions in System Settings**:
    - **System Settings → Privacy & Security → Accessibility** → Add "OpenMic"
@@ -45,9 +46,9 @@ When you launch OpenMic for the first time:
 ## 🎙️ How to Use
 
 ### Hold-to-Record (default)
-1. **Hold Fn** → microphone icon turns red 🔴, bottom-center pill expands to show "Recording..."
+1. **Hold Fn** → microphone icon turns red 🔴, bottom-center pill expands to show "Recording..." with 4 live level bars showing your mic input
 2. **Speak** your message
-3. **Release Fn** → icon turns yellow 🟡, pill shows "Polishing..."
+3. **Release Fn** → icon turns yellow 🟡, pill shows "Polishing..." with a pulsing dot so you know it's working
 4. **Polished text is pasted** automatically into your focused app, pill briefly shows green "Done" ✓ then collapses
 
 ### Toggle Mode (alternative)
@@ -72,6 +73,21 @@ Disable in config: set `sound_feedback_enabled` to `false` in `~/Library/Applica
 **You say:** "um, so like, this is a test message, you know?"
 
 **OpenMic pastes:** "This is a test message."
+
+### Dictation History
+
+OpenMic automatically saves every polished dictation. To view past dictations:
+
+1. Click the **microphone icon** in your menu bar → **History…**
+2. A table shows timestamps and polished text for your last 200 dictations
+
+**Actions available:**
+- **Copy** — copies the selected entry to clipboard
+- **Paste** — pastes the selected entry directly into the focused app
+- **Delete** — removes the selected entry
+- **Clear All** — deletes the entire history (asks for confirmation)
+
+History is persisted at `~/Library/Application Support/OpenMic/history.jsonl` and survives app restarts.
 
 ### Context-Aware Polishing
 
@@ -218,10 +234,13 @@ openmic/
 │   ├── config.py           # JSON config persistence
 │   ├── constants.py        # Key codes, defaults, mode constants
 │   ├── dictionary.py       # Personal dictionary CRUD
+│   ├── errors.py           # Typed error hierarchy (InvalidAPIKeyError, NetworkError, …)
+│   ├── history.py          # Persistent dictation history (JSONL)
 │   ├── permissions.py      # Accessibility + microphone checks
 │   └── ui/
 │       ├── overlay.py          # Always-visible overlay pill with animations (NSWindow)
-│       ├── native_dialogs.py   # NSAlert wrappers + hotkey capture
+│       ├── native_dialogs.py   # NSAlert wrappers + hotkey capture + picker
+│       ├── history_window.py   # Dictation history viewer
 │       ├── settings_window.py  # Settings dialogs
 │       └── onboarding.py       # First-run setup wizard
 ├── setup.py                # py2app configuration

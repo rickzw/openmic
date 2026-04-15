@@ -12,6 +12,7 @@ import openai
 from openmic.config import Config
 from openmic.constants import LLM_ANTHROPIC, LLM_OPENAI, POLISH_MAX_TOKENS
 from openmic.dictionary import PersonalDictionary
+from openmic.errors import InvalidAPIKeyError, NetworkError, ProviderAPIError, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -123,16 +124,16 @@ class Polisher:
             )
         except openai.AuthenticationError:
             logger.exception("OpenAI authentication error during polish")
-            raise RuntimeError("Invalid OpenAI API key. Update it in Settings → API Keys.")
+            raise InvalidAPIKeyError("Invalid OpenAI API key. Update it in Settings → API Keys.")
         except openai.RateLimitError:
             logger.exception("OpenAI rate limit during polish")
-            raise RuntimeError("OpenAI rate limit reached. Try again in a moment.")
+            raise RateLimitError("OpenAI rate limit reached. Try again in a moment.")
         except openai.APIConnectionError:
             logger.exception("OpenAI connection error during polish")
-            raise RuntimeError("Cannot reach OpenAI. Check your internet connection.")
+            raise NetworkError("Cannot reach OpenAI. Check your internet connection.")
         except openai.APIError:
             logger.exception("OpenAI API error during polish")
-            raise RuntimeError("OpenAI polish failed. Check logs for details.")
+            raise ProviderAPIError("OpenAI polish failed. Check logs for details.")
         choice = response.choices[0]
         content = choice.message.content
         finish_reason = choice.finish_reason
@@ -161,16 +162,16 @@ class Polisher:
             )
         except anthropic_sdk.AuthenticationError:
             logger.exception("Anthropic authentication error during polish")
-            raise RuntimeError("Invalid Anthropic API key. Update it in Settings → API Keys.")
+            raise InvalidAPIKeyError("Invalid Anthropic API key. Update it in Settings → API Keys.")
         except anthropic_sdk.RateLimitError:
             logger.exception("Anthropic rate limit during polish")
-            raise RuntimeError("Anthropic rate limit reached. Try again in a moment.")
+            raise RateLimitError("Anthropic rate limit reached. Try again in a moment.")
         except anthropic_sdk.APIConnectionError:
             logger.exception("Anthropic connection error during polish")
-            raise RuntimeError("Cannot reach Anthropic. Check your internet connection.")
+            raise NetworkError("Cannot reach Anthropic. Check your internet connection.")
         except anthropic_sdk.APIError:
             logger.exception("Anthropic API error during polish")
-            raise RuntimeError("Anthropic polish failed. Check logs for details.")
+            raise ProviderAPIError("Anthropic polish failed. Check logs for details.")
         result = response.content[0].text.strip()
         logger.info("Anthropic polish: '%s'", result[:100])
         return result

@@ -17,6 +17,7 @@ from AppKit import (
     NSApplication,
     NSModalPanelWindowLevel,
     NSObject,
+    NSPopUpButton,
     NSTextField,
     NSMakeRect,
     NSFont,
@@ -332,3 +333,53 @@ def show_hotkey_capture(
     mods = capture_state["mods"]
     desc = capture_state["description"]
     return vk, mods, desc
+
+
+def show_picker(
+    title: str,
+    message: str,
+    options: list,
+    default: str = None,
+    ok_button: str = "OK",
+    cancel_button: str = "Cancel",
+) -> Optional[str]:
+    """Show a native picker dialog with a dropdown (NSPopUpButton).
+
+    Args:
+        title: Alert title
+        message: Prompt message shown above the picker
+        options: List of option strings to display
+        default: Pre-selected option (must be in options); defaults to first
+        ok_button: OK button title
+        cancel_button: Cancel button title
+
+    Returns:
+        The selected option string, or None if cancelled.
+    """
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
+    alert = NSAlert.alloc().init()
+    alert.setMessageText_(title)
+    alert.setInformativeText_(message)
+    alert.addButtonWithTitle_(ok_button)
+    alert.addButtonWithTitle_(cancel_button)
+
+    popup = NSPopUpButton.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 26))
+    for option in options:
+        popup.addItemWithTitle_(option)
+
+    if default and default in options:
+        popup.selectItemWithTitle_(default)
+
+    alert.setAccessoryView_(popup)
+    _ensure_alert_visible(alert)
+
+    response = alert.runModal()
+
+    if response != NSAlertFirstButtonReturn:
+        logger.info("Picker '%s': user cancelled", title)
+        return None
+
+    selected = popup.titleOfSelectedItem()
+    logger.info("Picker '%s': selected '%s'", title, selected)
+    return selected

@@ -14,6 +14,7 @@ import openai
 import soundfile as sf
 
 from openmic.config import Config
+from openmic.errors import InvalidAPIKeyError, NetworkError, ProviderAPIError, RateLimitError
 from openmic.constants import (
     DEFAULT_OPENAI_STT_MODEL,
     DEFAULT_STT_LANGUAGE,
@@ -136,16 +137,16 @@ class Transcriber:
             response = client.audio.transcriptions.create(**kwargs)
         except openai.AuthenticationError:
             logger.exception("OpenAI authentication error during transcription")
-            raise RuntimeError("Invalid OpenAI API key. Update it in Settings → API Keys.")
+            raise InvalidAPIKeyError("Invalid OpenAI API key. Update it in Settings → API Keys.")
         except openai.RateLimitError:
             logger.exception("OpenAI rate limit during transcription")
-            raise RuntimeError("OpenAI rate limit reached. Try again in a moment.")
+            raise RateLimitError("OpenAI rate limit reached. Try again in a moment.")
         except openai.APIConnectionError:
             logger.exception("OpenAI connection error during transcription")
-            raise RuntimeError("Cannot reach OpenAI. Check your internet connection.")
+            raise NetworkError("Cannot reach OpenAI. Check your internet connection.")
         except openai.APIError:
             logger.exception("OpenAI API error during transcription")
-            raise RuntimeError("OpenAI transcription failed. Check logs for details.")
+            raise ProviderAPIError("OpenAI transcription failed. Check logs for details.")
         text = response.text
         logger.info("OpenAI STT (%s): '%s'", model, text[:100])
         return text
