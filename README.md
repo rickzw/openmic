@@ -2,16 +2,49 @@
 
 <em>Simple, fast, no-fuss voice typing with BYOK (Bring-Your-Own-Key).</em>
 
-Press a hotkey anywhere on macOS to dictate. Your speech is transcribed and polished by the context-aware AI, then automatically pasted.
+Press a hotkey anywhere on macOS. Speak. Your words are transcribed, cleaned up by AI, and pasted automatically into whatever app you're using.
+
+No subscription. No cloud lock-in. Your keys, your data, your cost.
+
+---
+
+## What makes it different
+
+**Context-aware polishing.** OpenMic captures which app you're typing in and its window title before sending text to the AI. The result is formatted to fit your context — casual in a chat window, formal in a document editor.
+
+| You say | Where | OpenMic pastes |
+|---|---|---|
+| "um hey can we move the standup to like 10 30" | Slack DM | "Hey, can we move the standup to 10:30?" |
+| "this function looks like it could be refactored to reduce duplication" | Code review | "This function could be refactored to reduce duplication." |
+| "so i wanted to follow up on the proposal from last week you know" | Gmail | "I wanted to follow up on the proposal from last week." |
+
+**Filler-word removal.** "um", "uh", "like", "you know", and false starts are stripped — not just trimmed, but intelligently rewritten.
+
+**Live audio feedback.** A floating pill near your cursor shows real-time microphone levels while you record, then animates through Transcribing → Polishing → Done so you always know what's happening.
+
+---
+
+## Feature highlights
+
+- **Hold-to-record or toggle mode** — hold Fn to record and release to process, or tap once to start and again to stop
+- **100+ languages** — ISO 639-1 code or `auto` for automatic detection
+- **Local offline STT** — MLX Whisper on Apple Silicon, no internet required for transcription
+- **Multiple providers** — OpenAI Whisper API + GPT, or local STT + Anthropic Claude
+- **Dictation history** — last 200 dictations saved, with copy / paste / delete actions
+- **Custom hotkey** — any modifier + key combination, changed live without restart
+- **Sound feedback** — subtle system sounds confirm recording start, stop, and cancel
+- **~1–5s end-to-end** — connection pooling, in-memory audio encoding, tuned paste delays
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1: Run from Terminal (Development)
+### Option 1: Run from source (Development)
 ```bash
-cd /path/to/openmic
-make run          # uses .venv/bin/python — do NOT use bare python -m openmic
+git clone https://github.com/rickzw/openmic
+cd openmic
+make setup    # creates .venv and installs dependencies
+make run      # launches the menu bar app
 ```
 
 ### Option 2: Run as .app Bundle (Recommended)
@@ -68,12 +101,6 @@ OpenMic plays subtle macOS system sounds to confirm state changes:
 
 Disable in config: set `sound_feedback_enabled` to `false` in `~/Library/Application Support/OpenMic/config.json`.
 
-### Example
-
-**You say:** "um, so like, this is a test message, you know?"
-
-**OpenMic pastes:** "This is a test message."
-
 ### Dictation History
 
 OpenMic automatically saves every polished dictation. To view past dictations:
@@ -88,24 +115,6 @@ OpenMic automatically saves every polished dictation. To view past dictations:
 - **Clear All** — deletes the entire history (asks for confirmation)
 
 History is persisted at `~/Library/Application Support/OpenMic/history.jsonl` and survives app restarts.
-
-### Context-Aware Polishing
-
-OpenMic automatically captures the app you're typing in and its window title, so the LLM can tailor the polished output to fit your context.
-
-**Example — typing in a Slack DM:**
-
-> **You say:** "hey can we move the standup to like 10 30 instead"
->
-> **OpenMic pastes:** "Hey, can we move the standup to 10:30 instead?"
-
-**Example — typing in a code review tool:**
-
-> **You say:** "um this function looks like it could be refactored to reduce duplication"
->
-> **OpenMic pastes:** "This function could be refactored to reduce duplication."
-
-The context is captured at the moment you release the hotkey (the app you were just typing in), so it's always accurate even if you switch windows during processing. On native AppKit apps (Notes, Mail, TextEdit), the existing text in the focused field is also included. Electron-based apps (Slack, VS Code) provide app name and window title only.
 
 ---
 
@@ -142,6 +151,8 @@ OpenMic supports any modifier + key combination as your hotkey:
 | Local Whisper (mlx) | whisper-small | Fast | Great | Apple Silicon |
 
 The default model `gpt-4o-mini-transcribe` is faster and more accurate than the legacy `whisper-1`. The active model is stored in config and can be changed directly in `~/Library/Application Support/OpenMic/config.json` under `openai_stt_model`.
+
+The local model pre-warms at startup in a background thread — no first-dictation lag.
 
 ### Language Support
 
@@ -254,7 +265,7 @@ Config stored at: `~/Library/Application Support/OpenMic/config.json`
 ## 🔒 Privacy & Security
 
 - **Your API key** is stored locally in `~/Library/Application Support/OpenMic/config.json`
-- **Audio** is processed by your chosen STT engine (cloud or local)
+- **Audio** is processed by your chosen STT engine (cloud or local — fully offline with MLX Whisper)
 - **No data** is sent anywhere except to your configured API providers
 - **Bring Your Own Key** model — you control costs and usage
 
